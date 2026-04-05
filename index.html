@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pantry Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:    #1a1a18;
+    --paper:  #f5f2eb;
+    --sage:   #2D5016;
+    --sage-l: #4A7C59;
+    --amber:  #c8860a;
+    --red:    #b83232;
+    --green:  #1e6b3a;
+    --rule:   #d4cfc4;
+    --scan-glow: rgba(45, 80, 22, 0.35);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'DM Mono', monospace;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* ── header ── */
+  header {
+    background: var(--sage);
+    padding: 18px 20px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 1.35rem;
+    font-weight: 300;
+    color: #fff;
+    letter-spacing: -0.01em;
+  }
+  header h1 em {
+    font-style: italic;
+    font-weight: 600;
+  }
+  .leaf { font-size: 1.5rem; }
+
+  /* ── auth banner ── */
+  #auth-section {
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    min-height: calc(100dvh - 64px);
+    justify-content: center;
+  }
+  .auth-card {
+    background: #fff;
+    border: 1.5px solid var(--rule);
+    border-radius: 12px;
+    padding: 28px 24px;
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+  }
+  .auth-card p {
+    font-size: 0.78rem;
+    color: #666;
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+
+  /* ── buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 24px;
+    border-radius: 8px;
+    border: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    width: 100%;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .btn-primary {
+    background: var(--sage);
+    color: #fff;
+  }
+  .btn-primary:active { background: #1e3b0e; transform: scale(0.98); }
+  .btn-secondary {
+    background: transparent;
+    color: var(--sage);
+    border: 1.5px solid var(--sage);
+  }
+  .btn-secondary:active { background: #f0f5ec; }
+  .btn-danger {
+    background: transparent;
+    color: var(--red);
+    border: 1.5px solid var(--red);
+    font-size: 0.75rem;
+    padding: 10px 16px;
+  }
+
+  /* ── main app ── */
+  #app-section { display: none; padding: 0 0 80px; }
+
+  /* ── scanner area ── */
+  .scanner-wrap {
+    position: relative;
+    background: var(--ink);
+    overflow: hidden;
+    height: 260px;
+  }
+  #scanner-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  #interactive { width: 100%; height: 100%; }
+  #interactive video { width: 100% !important; height: 260px !important; object-fit: cover !important; }
+  #interactive canvas { display: none; }
+
+  .scan-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .scan-frame {
+    width: 220px;
+    height: 110px;
+    border: 2px solid rgba(255,255,255,0.7);
+    border-radius: 10px;
+    position: relative;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+  }
+  .scan-frame::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: -1px; right: -1px;
+    height: 3px;
+    background: var(--sage-l);
+    border-radius: 10px 10px 0 0;
+    animation: scan-line 2s ease-in-out infinite;
+    box-shadow: 0 0 8px var(--scan-glow), 0 0 20px var(--scan-glow);
+  }
+  @keyframes scan-line {
+    0%   { top: -1px; }
+    50%  { top: calc(100% - 2px); }
+    100% { top: -1px; }
+  }
+  .scan-hint {
+    margin-top: 14px;
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.75);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .scanner-controls {
+    display: flex;
+    gap: 10px;
+    padding: 14px 16px;
+    background: #fff;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  /* ── result card ── */
+  #result-section {
+    display: none;
+    padding: 16px;
+  }
+  .result-card {
+    background: #fff;
+    border: 1.5px solid var(--rule);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .result-header {
+    background: var(--sage);
+    padding: 12px 16px;
+    color: #fff;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .barcode-badge {
+    font-size: 0.65rem;
+    background: rgba(255,255,255,0.2);
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+  .result-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+  .field-row { display: flex; flex-direction: column; gap: 4px; }
+  .field-label {
+    font-size: 0.65rem;
+    color: #888;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .field-input {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    padding: 10px 12px;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--ink);
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field-input:focus { border-color: var(--sage-l); }
+
+  select.field-input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+
+  .qty-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .result-actions {
+    padding: 12px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* ── status messages ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--ink);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    z-index: 999;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    white-space: nowrap;
+    max-width: 90vw;
+    text-align: center;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.success { background: var(--green); }
+  .toast.error { background: var(--red); }
+  .toast.warning { background: var(--amber); }
+
+  /* ── loading spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── user badge ── */
+  .user-bar {
+    padding: 10px 16px;
+    background: #fff;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: #666;
+  }
+  .user-name { color: var(--sage); font-weight: 500; }
+
+  /* ── not found state ── */
+  .not-found-note {
+    font-size: 0.72rem;
+    color: var(--amber);
+    background: #fff8e6;
+    border: 1px solid #ffe0a0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    line-height: 1.5;
+  }
+
+  /* ── history strip ── */
+  #history-section { padding: 0 16px 16px; }
+  .history-title {
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #888;
+    padding: 14px 0 8px;
+    border-top: 1px solid var(--rule);
+  }
+  .history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--rule);
+    gap: 12px;
+  }
+  .history-item-name { font-size: 0.78rem; color: var(--ink); flex: 1; }
+  .history-item-cat { font-size: 0.65rem; color: #888; }
+  .history-item-time { font-size: 0.65rem; color: #aaa; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="leaf">🌿</span>
+  <h1>Pantry <em>Scanner</em></h1>
+</header>
+
+<!-- AUTH -->
+<section id="auth-section">
+  <div class="auth-card">
+    <div style="font-size:3rem;margin-bottom:12px">🥫</div>
+    <p>Sign in with Google to scan barcodes and add items directly to your pantry spreadsheet.</p>
+    <button class="btn btn-primary" onclick="signIn()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#fff"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff"/></svg>
+      Sign in with Google
+    </button>
+  </div>
+</section>
+
+<!-- APP -->
+<section id="app-section">
+  <div class="user-bar">
+    <span>Signed in as <span class="user-name" id="user-name-display"></span></span>
+    <button class="btn btn-danger" style="width:auto;padding:6px 12px" onclick="signOut()">Sign out</button>
+  </div>
+
+  <!-- Scanner -->
+  <div class="scanner-wrap">
+    <div id="interactive"></div>
+    <div class="scan-overlay">
+      <div class="scan-frame"></div>
+      <div class="scan-hint">Align barcode within frame</div>
+    </div>
+  </div>
+
+  <div class="scanner-controls">
+    <button class="btn btn-secondary" onclick="startScanner()" id="btn-start">▶ Start Camera</button>
+    <button class="btn btn-danger" style="width:auto;padding:14px 16px" onclick="stopScanner()" id="btn-stop">■ Stop</button>
+  </div>
+
+  <!-- Result -->
+  <div id="result-section">
+    <div class="result-card">
+      <div class="result-header">
+        <span>Product Found</span>
+        <span class="barcode-badge" id="barcode-display"></span>
+      </div>
+      <div class="result-body">
+        <div id="not-found-note" class="not-found-note" style="display:none">
+          ⚠️ Barcode not found in database — please fill in the details manually.
+        </div>
+        <div class="field-row">
+          <label class="field-label">Item Name</label>
+          <input class="field-input" id="f-item" type="text" placeholder="e.g. Black Beans">
+        </div>
+        <div class="field-row">
+          <label class="field-label">Brand</label>
+          <input class="field-input" id="f-brand" type="text" placeholder="e.g. Bush's Best">
+        </div>
+        <div class="field-row">
+          <label class="field-label">Category</label>
+          <select class="field-input" id="f-category">
+            <option value="Canned Goods – Beans">Canned Goods – Beans</option>
+            <option value="Canned Goods – Tomatoes">Canned Goods – Tomatoes</option>
+            <option value="Canned Goods – Soups">Canned Goods – Soups</option>
+            <option value="Canned Goods – Vegetables">Canned Goods – Vegetables</option>
+            <option value="Canned Goods – Proteins">Canned Goods – Proteins</option>
+            <option value="Canned Goods – Other">Canned Goods – Other</option>
+            <option value="Sauces & Condiments">Sauces & Condiments</option>
+            <option value="Pasta & Grains">Pasta & Grains</option>
+            <option value="Rice & Grains">Rice & Grains</option>
+            <option value="Snacks & Bars">Snacks & Bars</option>
+            <option value="Nuts & Seeds">Nuts & Seeds</option>
+            <option value="Breakfast & Cereal">Breakfast & Cereal</option>
+            <option value="Baking & Pantry Staples">Baking & Pantry Staples</option>
+            <option value="Beverages">Beverages</option>
+            <option value="Supplements">Supplements</option>
+            <option value="🐾 Dog Food">🐾 Dog Food</option>
+            <option value="🐾 Dog Treats">🐾 Dog Treats</option>
+          </select>
+        </div>
+        <div class="qty-row">
+          <div class="field-row">
+            <label class="field-label">Qty Added</label>
+            <input class="field-input" id="f-qty" type="number" value="1" min="1">
+          </div>
+          <div class="field-row">
+            <label class="field-label">Low Stock At</label>
+            <input class="field-input" id="f-threshold" type="number" value="2" min="1">
+          </div>
+        </div>
+        <div class="field-row">
+          <label class="field-label">Exp Date (optional)</label>
+          <input class="field-input" id="f-expdate" type="date">
+        </div>
+        <div class="field-row">
+          <label class="field-label">Notes (optional)</label>
+          <input class="field-input" id="f-notes" type="text" placeholder="e.g. Costco, pantry shelf 2">
+        </div>
+      </div>
+      <div class="result-actions">
+        <button class="btn btn-primary" onclick="addToSheet()" id="btn-add">
+          + Add to Pantry Sheet
+        </button>
+        <button class="btn btn-secondary" onclick="resetScanner()">Scan Another</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div id="history-section" style="display:none">
+    <div class="history-title">Recently Added</div>
+    <div id="history-list"></div>
+  </div>
+</section>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Config ─────────────────────────────────────────────────────────────────
+const CLIENT_ID   = '467617354797-vdscs5vlkhoervn3vsgi6ap342as9bir.apps.googleusercontent.com';
+const SHEET_ID    = '1h0_-ftv1uyOxH_-C5SbFvGar2EW7WsEvwfC1OlV9dOw';
+const SHEET_NAME  = '🥫 Pantry Inventory';
+const SCOPES      = 'https://www.googleapis.com/auth/spreadsheets';
+
+let tokenClient, accessToken, scannerRunning = false;
+const history = [];
+
+// ── Google Identity Services ────────────────────────────────────────────────
+function loadGIS() {
+  const script = document.createElement('script');
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.onload = initGIS;
+  document.head.appendChild(script);
+}
+
+function initGIS() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: (resp) => {
+      if (resp.error) { showToast('Auth failed: ' + resp.error, 'error'); return; }
+      accessToken = resp.access_token;
+      // get user info
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      }).then(r => r.json()).then(u => {
+        document.getElementById('user-name-display').textContent = u.name || u.email;
+      });
+      document.getElementById('auth-section').style.display = 'none';
+      document.getElementById('app-section').style.display = 'block';
+      showToast('Signed in ✓', 'success');
+    }
+  });
+}
+
+function signIn()  { tokenClient.requestAccessToken({ prompt: 'consent' }); }
+function signOut() {
+  google.accounts.oauth2.revoke(accessToken, () => {
+    accessToken = null;
+    stopScanner();
+    document.getElementById('auth-section').style.display = 'flex';
+    document.getElementById('app-section').style.display = 'none';
+    document.getElementById('result-section').style.display = 'none';
+  });
+}
+
+// ── Quagga barcode scanner ──────────────────────────────────────────────────
+function startScanner() {
+  if (scannerRunning) return;
+  Quagga.init({
+    inputStream: {
+      type: 'LiveStream',
+      target: document.querySelector('#interactive'),
+      constraints: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    },
+    decoder: {
+      readers: ['ean_reader','upc_reader','upc_e_reader','code_128_reader','code_39_reader']
+    },
+    locate: true,
+    numOfWorkers: 2,
+    frequency: 10,
+  }, (err) => {
+    if (err) { showToast('Camera error: ' + err.message, 'error'); return; }
+    Quagga.start();
+    scannerRunning = true;
+  });
+
+  const seen = {};
+  Quagga.onDetected((result) => {
+    const code = result.codeResult.code;
+    if (!code) return;
+    const now = Date.now();
+    if (seen[code] && now - seen[code] < 3000) return;
+    seen[code] = now;
+    // Require 2 consistent reads
+    if (!seen[code + '_count']) seen[code + '_count'] = 0;
+    seen[code + '_count']++;
+    if (seen[code + '_count'] < 2) return;
+    stopScanner();
+    lookupBarcode(code);
+  });
+}
+
+function stopScanner() {
+  if (!scannerRunning) return;
+  Quagga.stop();
+  scannerRunning = false;
+}
+
+// ── Barcode lookup via Open Food Facts ─────────────────────────────────────
+async function lookupBarcode(barcode) {
+  showToast('Looking up barcode…');
+  document.getElementById('barcode-display').textContent = barcode;
+
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`);
+    const data = await res.json();
+
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      const name  = p.product_name || p.product_name_en || '';
+      const brand = p.brands || '';
+      const cats  = (p.categories || '').toLowerCase();
+
+      document.getElementById('f-item').value  = name;
+      document.getElementById('f-brand').value = brand;
+      document.getElementById('f-category').value = guessCategory(cats, name);
+      document.getElementById('not-found-note').style.display = 'none';
+      showToast('Product found!', 'success');
+    } else {
+      document.getElementById('f-item').value  = '';
+      document.getElementById('f-brand').value = '';
+      document.getElementById('not-found-note').style.display = 'block';
+      showToast('Barcode not in database', 'warning');
+    }
+  } catch(e) {
+    document.getElementById('not-found-note').style.display = 'block';
+    showToast('Lookup failed — fill in manually', 'warning');
+  }
+
+  document.getElementById('result-section').style.display = 'block';
+  document.getElementById('result-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Category auto-detection ─────────────────────────────────────────────────
+function guessCategory(cats, name) {
+  const t = (cats + ' ' + name).toLowerCase();
+  if (/dog|pet|treat|kibble|canine/.test(t))          return '🐾 Dog Food';
+  if (/bean|lentil|legume|chickpea/.test(t))           return 'Canned Goods – Beans';
+  if (/tomato|tomatoes/.test(t))                       return 'Canned Goods – Tomatoes';
+  if (/soup|broth|stew|chili/.test(t))                 return 'Canned Goods – Soups';
+  if (/corn|pea|carrot|vegetable|veggie/.test(t))      return 'Canned Goods – Vegetables';
+  if (/tuna|salmon|sardine|chicken|spam|meat/.test(t)) return 'Canned Goods – Proteins';
+  if (/pasta|noodle|spaghetti|penne|ramen|mac/.test(t))return 'Pasta & Grains';
+  if (/rice|quinoa|farro|couscous|grain/.test(t))      return 'Rice & Grains';
+  if (/sauce|marinara|condiment|ketchup|soy|oyster/.test(t)) return 'Sauces & Condiments';
+  if (/cereal|granola|oat|muesli/.test(t))             return 'Breakfast & Cereal';
+  if (/cracker|chip|snack|bar|popcorn|gummy/.test(t))  return 'Snacks & Bars';
+  if (/nut|almond|cashew|seed|walnut|pecan/.test(t))   return 'Nuts & Seeds';
+  if (/coffee|tea|drink|beverage|juice|beer/.test(t))  return 'Beverages';
+  if (/flour|sugar|salt|baking|spice/.test(t))         return 'Baking & Pantry Staples';
+  return 'Canned Goods – Other';
+}
+
+// ── Append row to Google Sheet ──────────────────────────────────────────────
+async function addToSheet() {
+  const item      = document.getElementById('f-item').value.trim();
+  const brand     = document.getElementById('f-brand').value.trim();
+  const category  = document.getElementById('f-category').value;
+  const qty       = parseInt(document.getElementById('f-qty').value) || 1;
+  const threshold = parseInt(document.getElementById('f-threshold').value) || 2;
+  const expDate   = document.getElementById('f-expdate').value;
+  const notes     = document.getElementById('f-notes').value.trim();
+
+  if (!item) { showToast('Please enter an item name', 'error'); return; }
+
+  const btn = document.getElementById('btn-add');
+  btn.innerHTML = '<span class="spinner"></span> Adding…';
+  btn.disabled = true;
+
+  // Format exp date
+  let expFormatted = '';
+  if (expDate) {
+    const [y, m, d] = expDate.split('-');
+    expFormatted = `${m}/${d}/${y}`;
+  }
+
+  // Status formula placeholder — Sheets will calculate
+  const statusFormula = `=IF(D{{ROW}}=0,"❌ Out",IF(D{{ROW}}<=E{{ROW}},"⚠️ Low","✅ OK"))`;
+
+  // We append a plain row; the formula will be a string that Sheets evaluates
+  const values = [[
+    category,
+    item,
+    brand,
+    qty,
+    threshold,
+    '',           // Status – Sheets formula added below
+    'Pantry shelf',
+    expFormatted, // Exp Date
+    '',           // Exp Warning formula added below
+    notes
+  ]];
+
+  try {
+    // 1. Append the row
+    const appendRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}!A:J:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values })
+      }
+    );
+    const appendData = await appendRes.json();
+
+    if (!appendRes.ok) throw new Error(appendData.error?.message || 'Sheet append failed');
+
+    // 2. Get the row number that was just written
+    const updatedRange = appendData.updates?.updatedRange || '';
+    const rowMatch = updatedRange.match(/:J(\d+)$/);
+    const newRow = rowMatch ? parseInt(rowMatch[1]) : null;
+
+    // 3. If we have the row number, update Status and Exp Warning with real formulas
+    if (newRow) {
+      const formulaValues = [[
+        `=IF(D${newRow}=0,"❌ Out",IF(D${newRow}<=E${newRow},"⚠️ Low","✅ OK"))`,
+        expFormatted
+          ? `=IF(H${newRow}="","",IF(H${newRow}<TODAY(),"🚨 Expired!",IF(H${newRow}<=TODAY()+30,"⚠️ Expiring Soon","✅ Good")))`
+          : ''
+      ]];
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}!F${newRow}:I${newRow}?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [['', '', formulaValues[0][0], expFormatted, formulaValues[0][1]]] })
+        }
+      );
+
+      // Correct: F=status, H=expDate, I=expWarning
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}!F${newRow}?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[`=IF(D${newRow}=0,"❌ Out",IF(D${newRow}<=E${newRow},"⚠️ Low","✅ OK"))`]] })
+        }
+      );
+
+      if (expFormatted) {
+        await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}!I${newRow}?valueInputOption=USER_ENTERED`,
+          {
+            method: 'PUT',
+            headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [[`=IF(H${newRow}="","",IF(H${newRow}<TODAY(),"🚨 Expired!",IF(H${newRow}<=TODAY()+30,"⚠️ Expiring Soon","✅ Good")))`]] })
+          }
+        );
+      }
+    }
+
+    showToast(`"${item}" added to sheet ✓`, 'success');
+    addToHistory(item, category);
+    resetScanner();
+
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.innerHTML = '+ Add to Pantry Sheet';
+    btn.disabled = false;
+  }
+}
+
+// ── History ─────────────────────────────────────────────────────────────────
+function addToHistory(name, category) {
+  history.unshift({ name, category, time: new Date() });
+  if (history.length > 8) history.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const sec = document.getElementById('history-section');
+  const list = document.getElementById('history-list');
+  if (!history.length) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  list.innerHTML = history.map(h => `
+    <div class="history-item">
+      <div>
+        <div class="history-item-name">${h.name}</div>
+        <div class="history-item-cat">${h.category}</div>
+      </div>
+      <div class="history-item-time">${formatTime(h.time)}</div>
+    </div>
+  `).join('');
+}
+
+function formatTime(d) {
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function resetScanner() {
+  document.getElementById('result-section').style.display = 'none';
+  document.getElementById('f-item').value = '';
+  document.getElementById('f-brand').value = '';
+  document.getElementById('f-expdate').value = '';
+  document.getElementById('f-notes').value = '';
+  document.getElementById('f-qty').value = '1';
+  document.getElementById('barcode-display').textContent = '';
+  document.getElementById('not-found-note').style.display = 'none';
+  startScanner();
+}
+
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+loadGIS();
+</script>
+</body>
+</html>
