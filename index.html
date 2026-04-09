@@ -462,7 +462,7 @@
 const CLIENT_ID   = '467617354797-vdscs5vlkhoervn3vsgi6ap342as9bir.apps.googleusercontent.com';
 const SHEET_ID    = '1h0_-ftv1uyOxH_-C5SbFvGar2EW7WsEvwfC1OlV9dOw';
 const SHEET_NAME  = '🥫 Pantry Inventory';
-const SCOPES      = 'https://www.googleapis.com/auth/spreadsheets';
+const SCOPES      = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive';
 
 let tokenClient, accessToken, scannerRunning = false;
 const history = [];
@@ -744,8 +744,9 @@ async function addToSheet() {
     );
     if (!fmtRes.ok) {
       const fmtErr = await fmtRes.json();
-      console.warn('Formatting warning:', fmtErr.error?.message);
-      // Don't throw — row was added successfully, formatting is cosmetic
+      const msg = fmtErr.error?.message || 'Unknown formatting error';
+      showToast('Format error: ' + msg, 'warning');
+      console.error('batchUpdate failed:', fmtErr);
     }
 
     showToast(`"${item}" added to sheet ✓`, 'success');
